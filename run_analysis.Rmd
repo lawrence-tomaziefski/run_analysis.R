@@ -329,7 +329,7 @@ narrow_complete_data = data.table(melt(wide_complete_data,
                                        measure.vars = (length(train_sub_act)+1):length(wide_complete_data)))
 
 ```
-#######Extract the measurements on the mean and standard deviation for each measurement
+######Extract the measurements on the mean and standard deviation for each measurement
 ```
 #Extract the measurements on the mean and standard deviation for each measurement
 mean_std_data = select(wide_complete_data,1:2,contains("mean"),contains("std"))
