@@ -183,10 +183,10 @@ narrow_complete_data = data.table(melt(wide_complete_data,
                                        id =1:length(train_sub_act),
                                        measure.vars = (length(train_sub_act)+1):length(wide_complete_data)))
 #Extract the measurements on the mean and standard deviation for each measurement
-mean_std_data = select(wide_complete_data,1:3,contains("mean"),contains("std"))
+mean_std_data = select(wide_complete_data,1:2,contains("mean"),contains("std"))
 mean_std_data_tidy = data.table(melt(mean_std_data,
-                                     id =1:3,
-                                     measure.vars = 4:89))
+                                     id =1:2,
+                                     measure.vars = 3:89))
 ## 5. From the data set in step 4, creates a second, independent tidy data set 
 ## with the average of each variable for each activity and each subject.
 mean_by_activity_and_subject_wide = dcast(narrow_complete_data, activity + participantid ~ variable,mean)
