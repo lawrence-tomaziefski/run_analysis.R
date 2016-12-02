@@ -1,0 +1,341 @@
+---
+title: "Getting and Cleaning Data Course Project"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#####Project Requirement
+Create one R script called run_analysis.R that does the following:
+
+
+
+
+
+        1. Merges the training and the test sets to create one data set.
+        2. Extracts only the measurements on the mean and standard deviation
+        for each measurement.
+        3. Uses descriptive activity names to name the activities in the data 
+        set.
+        4. Appropriately labels the data set with descriptive variable names.
+        5. From the data set in step 4 creates a second, independent tidy data 
+        set with the average of each variable for each activity and each subject.
+#####General Approach
+Keeping the fundamental goal of making tidy data in mind, my approach was to ensure 
+that:
+
+
+
+        1. Each variable forms a column and each observation forms a row.
+        2. Variable names are: 
+        i)  Lower case. 
+        ii) Descriptive.
+        iii) Do not contain any special characters such as "_","()", etc.
+        iv) No duplicated variables or data.  
+        
+I made more in-depth comments throughout my code below, but here is an outline of
+the steps I took to clean and compile data set.
+
+
+
+        1. Cleaned the data related to the feature variables.  I renamed the 
+        variables given in the features_info.txt file according to tidy data
+        principles.  The updated variable names are in the codebook. I checked
+        see if there were any duplicated variables as well.  
+        2. Cleaned the activities data file according to tidy data principles.
+        3. Built the test and training data sets removing duplicated data.
+        4. Merged the test and training data sets into a complete data set.
+        5. Melted the data set to a narrow format.
+
+
+#####run_analysis.R
+######Upfront administrative information. 
+```
+#========================================================================
+#Data Source
+# https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR
+%20Dataset.zip
+#========================================================================
+#Packages that are required to process the data
+require(plyr)
+require(dtplyr)
+require(dplyr)
+require(data.table)
+require(reshape2)
+require(stringr)
+#========================================================================
+# Sets working directory, creates a folder for data, and creates a path to 
+that data.
+setwd('yourworkingdirectory')
+dir.create("./project_data")
+# Paths to the data we are going to compile.  
+path = ("./project_data/")
+path2 = ("./project_data/test/")
+path2a = ("./project_data/train/")
+path3 = ("./project_data/test/Inertial Signals")
+path3a = ("./project_data/train/Inertial Signals")
+#========================================================================
+```
+######Cleaning the feature variables. 
+```
+#Read in the features data file to use them as column headers later in the
+reshaping process.
+#In order to make the process of reading the data in easier, 
+I converted the features.txt to a .csv
+
+feature = data.table(read.csv(paste0(path,"features.txt"),header = FALSE,
+        stringsAsFactors = FALSE))
+        colnames(feature) = c("feature")
+
+#Split into two columns in case we need feature ids later.
+
+feature = colsplit(feature$feature," ",c("featureid","feature")) 
+
+#Check to see if there are any duplicated features 
+
+duplicate_data = duplicated(feature$feature, fromLast = TRUE) 
+##returns a logical vector with 84 TRUE.  Use the which function to determine 
+where the duplicates occur.
+
+duplicate_data = which(duplicate_data == TRUE)
+
+#Need to tidy the feature labels to make them more intuitave and useful.
+#Make all feature labels lower case and rename where neccessary to make less ambigious.
+feature = mutate(feature,feature=gsub("\\-", "",feature))
+feature = mutate(feature,feature=tolower(feature))
+feature = mutate(feature,feature=str_replace(feature,"tbody","timebody_"))
+feature = mutate(feature,feature=str_replace(feature,"fbody","fequencydomainsignalbody"))
+feature = mutate(feature,feature=str_replace(feature,"acc","acceleration"))
+feature = mutate(feature,feature=str_replace(feature,"bodybody","body"))
+feature = mutate(feature,feature=str_replace(feature,"tgravity","timegravity"))
+feature = mutate(feature,feature=str_replace(feature,fixed("("),""))
+feature = mutate(feature,feature=gsub("\\)", "",feature))
+feature = mutate(feature,feature=str_replace(feature,"arcoeff","autorregresioncoefficient"))
+feature = mutate(feature,feature=gsub("\\.", "",feature))
+
+#Output is a data frame named feature with the feature ids and lables.
+#Check one more time to see that we didn't accidently create any more duplicates
+
+duplicate_data2 = duplicated(feature$feature, fromLast = TRUE)
+duplicate_data2 = which(duplicate_data2 == TRUE)
+
+#Check returns the same output so we will move forward to compiling the data set.
+#Get the rows that have mean or stadard deviation (std) in thier name.
+
+filtered_feature_mean = grep("mean",feature$feature,value = TRUE)
+duplicate_filtered_mean = duplicated(filtered_feature_mean,fromLast = TRUE)
+which(duplicate_filtered_mean == TRUE)
+filtered_feature_std = grep("std",feature$feature,value = TRUE)
+duplicate_filtered_std = duplicated(filtered_feature_std,fromLast = TRUE)
+which(duplicate_filtered_std == TRUE)
+
+#Combine the two vectors created above and check for duplicates once again.
+
+filtered_feature = c(filtered_feature_mean,filtered_feature_std)
+duplicate_filtered = duplicated(filtered_feature,fromLast = TRUE)
+which(duplicate_filtered == TRUE)
+
+#Determine the length of duplicate filtered so we know exactly how many 
+features measure the mean and std.
+
+howmanymean_std =length(duplicate_filtered) 
+#returns 86, so when go to make our tidy data set of just the
+variables that measure the mean and std we should only have 86.  
+```
+######Cleaning the Activities data. 
+```
+activities = data.table(read.delim(paste0(path,"activity_labels.txt"),
+                header = FALSE,stringsAsFactors = FALSE))
+colnames(activities) = c("activity")
+
+#Split into two columns in case we need activity ids later.
+
+activities = colsplit(activities$activity," ",c("activityid","activity"))
+
+#make all feature labels lower case and take out the "underscore".
+
+activities = mutate(activities,activity=tolower(activities$activity))
+activities = mutate(activities,activity=gsub("\\_", "", activities$activity))
+
+#Output is a data frame named activity with the activity ids and activities.
+
+```
+######Building the Test Data Set. 
+```
+#Read in the testing subjects from the subject_test.txt file. 
+
+test_subjects = read.delim(paste0(path2,"subject_test.txt"),header = FALSE,col.names = c("participantid"),stringsAsFactors = FALSE)
+
+#Add a column to the data frame to identify the source of the data, 
+in the case the source was from the testing.Read in test activities from the y_test.txt file 
+and use the plyr join function to match test activities to the activity names.
+
+test_activities = read.delim(paste0(path2,"y_test.txt"),header = FALSE,col.names = c("activityid"),stringsAsFactors = FALSE)
+joined_test_activities =join(test_activities, activities, by = "activityid")
+#Combine the three data frames just created into one data frame and pull out only the columns we want.
+
+test_sub_act = bind_cols(test_subjects,joined_test_activities)
+test_sub_act = select(test_sub_act,participantid,activity)
+
+#Create a data frame that holds the column names for the inertial data sets, 
+this will be used later to name our columns in a combined data set.
+
+in_tst_head = data.frame(number = c(1:128),
+                         "bodyaccelerationx",
+                         "bodyaccelerationy",
+                         "bodyaccelerationz",
+                         "bodygyrox",
+                         "bodygyroy",
+                         "bodygyroz",
+                         "totalaccelerationx",
+                         "totalaccelerationy",
+                         "totalaccelerationz")
+in_tst_head= mutate(in_tst_head,bodyaccelerationx = 
+                            paste0(in_tst_head$X.bodyaccelerationx.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,bodyaccelerationy = 
+                            paste0(in_tst_head$X.bodyaccelerationy.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,bodyaccelerationz = 
+                            paste0(in_tst_head$X.bodyaccelerationz.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,bodygyrox = 
+                            paste0(in_tst_head$X.bodygyrox.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,bodygyroy = 
+                            paste0(in_tst_head$X.bodygyroy.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,bodygyroz = 
+                            paste0(in_tst_head$X.bodygyroz.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,totalaccelerationx = 
+                            paste0(in_tst_head$X.totalaccelerationx.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,totalaccelerationy= p
+                    aste0(in_tst_head$X.totalaccelerationy.,in_tst_head$number))
+in_tst_head= mutate(in_tst_head,totalaccelerationz = 
+                            paste0(in_tst_head$X.totalaccelerationz.,in_tst_head$number))
+in_tst_head=select(in_tst_head,11:19)
+
+#Merge the test data into one data set.
+#Create a list of files to read in 
+
+files_list = list.files(path3, full.names = TRUE) 
+test_data = data.table(nrow =1:1) 
+#Loop through the files, and column bind them together in to the data table (test_data) 
+
+for (i in 1:length(files_list)) {
+        test_data = cbind(test_data,read.table(files_list[i],header =FALSE, stringsAsFactors = FALSE))
+}
+#Take out the unused nrow.
+
+test_data = select(test_data,-nrow)
+
+#Pull the column names from the feature and in_tst_head data frames.
+
+col_names  = c(in_tst_head[,1],in_tst_head[,2],in_tst_head[,3],in_tst_head[,4],
+               in_tst_head[,5],in_tst_head[,6],in_tst_head[,7],in_tst_head[,8],in_tst_head[,9])
+               
+#Name the colunmns in the test data set with the vector created above.
+
+colnames(test_data) = col_names
+
+#Combine with test_sub_act data frame inorder to match the measurements with the 
+participant and activity.
+
+test_data = bind_cols(test_sub_act,test_data)
+
+#Build the features data table for testing data set.
+
+features_test_data = data.table(read.table(paste0(path,"/X_test.txt"),header =FALSE, 
+        stringsAsFactors = FALSE))
+feature_col_names = c(feature[,2])
+colnames(features_test_data) = feature_col_names
+
+#Remove the duplicate columns.
+
+features_test_data = select(features_test_data,-(duplicate_data)) 
+
+#Check to make sure there are no more duplicate columns.
+
+features_headers = names(features_test_data)
+features_headers_duplicate = duplicated(features_headers, fromLast = TRUE)
+features_headers_duplicate2 = which(features_headers == TRUE) 
+#returns and integer of 0 so there is are no duplicate columns.
+
+#combine test_data with features_test_data
+
+test_data_combined = cbind(test_data,features_test_data)
+```
+######Building the Training Data Set. 
+```
+#In order to build the training data set we are going to follow the same process we used to build the test data set.
+#Read in the testing subjects from the subject_train.txt file.
+
+train_subjects = read.delim(paste0(path2a,"subject_train.txt"),header = FALSE,col.names = c("participantid"),stringsAsFactors = FALSE)
+
+#Read in test activities from the y_train.txt file and use the plyr join function to match test activities to the activity names.
+
+train_activities = read.delim(paste0(path2a,"y_train.txt"),header = FALSE,col.names = c("activityid"),stringsAsFactors = FALSE)
+
+joined_train_activities =join(train_activities, activities, by = "activityid")
+
+#Combine the three data frames just created into one data frame and pull out only the columns we want.
+
+train_sub_act = bind_cols(train_subjects,joined_train_activities)
+train_sub_act = select(train_sub_act,participantid,activity)
+
+#Merge the traning data into one data set.
+#Create a list of files to read in.
+
+files_list_train = list.files(path3a, full.names = TRUE) 
+
+#Create an empty data table.
+train_data = data.table(nrow =1:1) 
+
+#Loop through the files, and column bind them together in to the data table (train_data). 
+
+for (i in 1:length(files_list_train)) {
+        train_data = cbind(train_data,read.table(files_list_train[i],header =FALSE, stringsAsFactors = FALSE))
+}
+
+#Take out the unused nrow.
+
+train_data = select(train_data,-nrow)
+
+#Name the colunmns in the test data set with the vector created above.
+
+colnames(train_data) = col_names
+
+#Combine with test_sub_act data frame inorder to match the measurements with the participant and activity.
+
+train_data = bind_cols(train_sub_act,train_data)
+
+#Build the features training data set.
+
+features_train_data = data.table(read.table(paste0(path,"/X_train.txt"),header =FALSE, stringsAsFactors = FALSE))
+colnames(features_train_data) = feature_col_names
+features_train_data = select(features_train_data,-(duplicate_data))
+
+#Combine test_data with features_test_data.
+train_data_combined = cbind(train_data,features_train_data)
+```
+######Making the Complete Data Set
+```
+#Combine the test and training data sets into a wide format.
+
+wide_complete_data = rbind(test_data_combined,train_data_combined)
+
+#Melt the data using the participantid,activity, and source columns as ids,
+and the measurements as variables.
+
+narrow_complete_data = data.table(melt(wide_complete_data,
+                                       id =1:length(train_sub_act),
+                                       measure.vars = (length(train_sub_act)+1):length(wide_complete_data)))
+
+```
+#######Extract the measurements on the mean and standard deviation for each measurement
+```
+#Extract the measurements on the mean and standard deviation for each measurement
+mean_std_data = select(wide_complete_data,1:2,contains("mean"),contains("std"))
+mean_std_data = dcast(mean_std_data, activity + participantid ~ variable,mean)
+mean_std_data_tidy = data.table(melt(mean_std_data,
+                                     id =1:2,
+                                     measure.vars = 3:88))
+write.table(mean_std_data_tidy,file= paste0(path,"mean_std_data_tidy.txt"),row.names = FALSE)
+```
